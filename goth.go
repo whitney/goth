@@ -6,10 +6,14 @@ import (
   "net/http"
   "os"
   "strconv"
-  "encoding/json"
-  "github.com/whitney/auth/authcore"
+  "github.com/whitney/auth"
   "github.com/jmoiron/sqlx"
   _ "github.com/lib/pq"
+)
+
+const (
+  minPwdLen int = 5
+  minUnameLen int = 1
 )
 
 var db *sqlx.DB
@@ -39,22 +43,13 @@ func main() {
 // API
 func authenticated(res http.ResponseWriter, req *http.Request) {
   res.Header().Set("Content-Type", "application/json") 
-  authTkn, err := authcore.ReadAuthCookie(req)
+  user, err := auth.AuthenticateUser(db, req)
   if err != nil {
     http.Error(res, err.Error(), http.StatusUnauthorized)
     return
   }
 
-  user, err := authcore.QueryUserByAuthTkn(db, authTkn)
-  if err != nil {
-    http.Error(res, err.Error(), http.StatusNotFound)
-    return
-  }
-
-  uMap := make(map[string]string)
-  uMap["id"] = strconv.Itoa(int(user.Id))
-  uMap["username"] = user.Username
-  jsonStr, err := authcore.JsonWrapMap(uMap)
+  jsonStr, err := user.Json()
   if err != nil {
     http.Error(res, err.Error(), http.StatusInternalServerError)
     return
@@ -68,48 +63,45 @@ func signup(res http.ResponseWriter, req *http.Request) {
   res.Header().Set("Content-Type", "application/json") 
 
   username := req.FormValue("username")
-  if len(username) == 0 {
+  if len(username) < minUnameLen {
     http.Error(res, "username missing", http.StatusBadRequest)
     return
   }
 
   password := req.FormValue("password")
-  if len(password) < 5 {
+  if len(password) < minPwdLen {
     http.Error(res, "invalid password", http.StatusBadRequest)
     return
   }
 
-  _, err := authcore.QueryUserByUsername(db, username)
+  _, err := auth.QueryUserByUsername(db, username)
   if err == nil {
     http.Error(res, "username taken", http.StatusBadRequest)
     return
   }
 
-  hashedPwd, err := authcore.HashPassword(password)
+  hashedPwd, err := auth.HashPassword(password)
   if err != nil {
     http.Error(res, err.Error(), http.StatusInternalServerError)
     return
   }
 
-  authTkn := authcore.CreateAuthTkn()
+  authTkn := auth.CreateAuthTkn()
   log.Printf("authTkn: %s", authTkn)
 
-  uId, err := authcore.InsertUser(db, username, string(hashedPwd), authTkn)
+  user, err := auth.InsertUser(db, username, string(hashedPwd), authTkn)
   if err != nil {
     http.Error(res, err.Error(), http.StatusInternalServerError)
     return
   }
 
-  uMap := make(map[string]string)
-  uMap["id"] = strconv.Itoa(int(uId))
-  uMap["username"] = username
-  json, err := json.Marshal(uMap)
+  jsonStr, err := user.Json()
   if err != nil {
     http.Error(res, err.Error(), http.StatusInternalServerError)
     return
   }
 
-  fmt.Fprintln(res, string(json))
+  fmt.Fprintln(res, jsonStr)
 }
 
 // API
@@ -128,13 +120,13 @@ func login(res http.ResponseWriter, req *http.Request) {
     return
   }
 
-  user, err := authcore.QueryUserByUsername(db, username)
+  user, err := auth.QueryUserByUsername(db, username)
   if err != nil {
     http.Error(res, err.Error(), http.StatusNotFound)
     return
   }
 
-  err = authcore.CompareHashAndPassword(user.PasswordDigest, password)
+  err = auth.CompareHashAndPassword(user.PasswordDigest, password)
   if err != nil {
     http.Error(res, err.Error(), http.StatusUnauthorized)
     return
@@ -143,13 +135,13 @@ func login(res http.ResponseWriter, req *http.Request) {
   uMap := make(map[string]string)
   uMap["id"] = strconv.Itoa(int(user.Id))
   uMap["username"] = user.Username
-  jsonStr, err := authcore.JsonWrapMap(uMap)
+  jsonStr, err := auth.JsonWrapMap(uMap)
   if err != nil {
     http.Error(res, err.Error(), http.StatusInternalServerError)
     return
   }
 
-  err = authcore.SetAuthCookie(user.AuthToken, res)
+  err = auth.SetAuthCookie(user.AuthToken, res)
   if err != nil {
     http.Error(res, err.Error(), http.StatusInternalServerError)
     return
@@ -161,6 +153,6 @@ func login(res http.ResponseWriter, req *http.Request) {
 // API
 func logout(res http.ResponseWriter, req *http.Request) {
   res.Header().Set("Content-Type", "application/json") 
-  authcore.InvalidateAuthCookie(res)
+  auth.InvalidateAuthCookie(res)
   fmt.Fprintln(res, "{'msg': 'ok'}")
 }
