@@ -5,7 +5,6 @@ import (
   "log"
   "net/http"
   "os"
-  "strconv"
   "github.com/whitney/auth"
   "github.com/jmoiron/sqlx"
   _ "github.com/lib/pq"
@@ -132,10 +131,7 @@ func login(res http.ResponseWriter, req *http.Request) {
     return
   }
 
-  uMap := make(map[string]string)
-  uMap["id"] = strconv.Itoa(int(user.Id))
-  uMap["username"] = user.Username
-  jsonStr, err := auth.JsonWrapMap(uMap)
+  jsonStr, err := user.Json()
   if err != nil {
     http.Error(res, err.Error(), http.StatusInternalServerError)
     return
