@@ -16,6 +16,7 @@ const (
 )
 
 var db *sqlx.DB
+var authClient *auth.Client
 
 func main() {
   var err error
@@ -26,6 +27,8 @@ func main() {
   if err != nil {
     panic(err)
   }
+
+  authClient = auth.NewClient(db)
 
   http.HandleFunc("/auth/signup", signup)
   http.HandleFunc("/auth/login", login)
@@ -42,7 +45,7 @@ func main() {
 // API
 func authenticated(res http.ResponseWriter, req *http.Request) {
   res.Header().Set("Content-Type", "application/json") 
-  user, err := auth.AuthenticateUser(db, req)
+  user, err := authClient.AuthenticateUser(req)
   if err != nil {
     http.Error(res, err.Error(), http.StatusUnauthorized)
     return
