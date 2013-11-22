@@ -5,6 +5,7 @@ import (
   "log"
   "net/http"
   "os"
+  "github.com/whitney/restutil"
   "github.com/whitney/auth"
   "github.com/jmoiron/sqlx"
   _ "github.com/lib/pq"
@@ -42,95 +43,88 @@ func main() {
   }
 }
 
-// API
 func authenticated(res http.ResponseWriter, req *http.Request) {
-  res.Header().Set("Content-Type", "application/json") 
   user, err := authClient.AuthenticateUser(req)
   if err != nil {
-    http.Error(res, err.Error(), http.StatusUnauthorized)
+    restutil.JsonErr(res, "no", http.StatusUnauthorized)
     return
   }
 
   jsonStr, err := user.Json()
   if err != nil {
-    http.Error(res, err.Error(), http.StatusInternalServerError)
+    restutil.JsonErr(res, "oops", http.StatusInternalServerError)
     return
   }
 
-  fmt.Fprintln(res, jsonStr)
+  restutil.JsonSucc(res, jsonStr, http.StatusOK)
 }
 
-// API
 func signup(res http.ResponseWriter, req *http.Request) {
-  res.Header().Set("Content-Type", "application/json") 
-
   username := req.FormValue("username")
   if len(username) < minUnameLen {
-    http.Error(res, "username missing", http.StatusBadRequest)
+    restutil.JsonErr(res, "invalid username", http.StatusBadRequest)
     return
   }
 
   password := req.FormValue("password")
   if len(password) < minPwdLen {
-    http.Error(res, "invalid password", http.StatusBadRequest)
+    restutil.JsonErr(res, "invalid password", http.StatusBadRequest)
     return
   }
 
   _, err := auth.QueryUserByUsername(db, username)
   if err == nil {
-    http.Error(res, "username taken", http.StatusBadRequest)
+    restutil.JsonErr(res, "username taken", http.StatusBadRequest)
     return
   }
 
   hashedPwd, err := auth.HashPassword(password)
   if err != nil {
-    http.Error(res, err.Error(), http.StatusInternalServerError)
+    restutil.JsonErr(res, err.Error(), http.StatusInternalServerError)
     return
   }
 
   authTkn := auth.CreateAuthTkn()
-  log.Printf("authTkn: %s", authTkn)
 
   user, err := auth.InsertUser(db, username, string(hashedPwd), authTkn)
   if err != nil {
-    http.Error(res, err.Error(), http.StatusInternalServerError)
+    restutil.JsonErr(res, err.Error(), http.StatusInternalServerError)
     return
   }
 
   jsonStr, err := user.Json()
   if err != nil {
-    http.Error(res, err.Error(), http.StatusInternalServerError)
+    restutil.JsonErr(res, err.Error(), http.StatusInternalServerError)
     return
   }
 
   fmt.Fprintln(res, jsonStr)
 }
 
-// API
 func login(res http.ResponseWriter, req *http.Request) {
   res.Header().Set("Content-Type", "application/json") 
 
   username := req.FormValue("username")
   if len(username) == 0 {
-    http.Error(res, "username missing", http.StatusBadRequest)
+    http.Error(res, "{'msg': 'username missing'}", http.StatusBadRequest)
     return
   }
 
   password := req.FormValue("password")
   if len(password) == 0 {
-    http.Error(res, "password missing", http.StatusBadRequest)
+    http.Error(res, "{'msg': 'password missing'}", http.StatusBadRequest)
     return
   }
 
   user, err := auth.QueryUserByUsername(db, username)
   if err != nil {
-    http.Error(res, err.Error(), http.StatusNotFound)
+    http.Error(res, "{'msg': 'invalid username/password'}", http.StatusUnauthorized)
     return
   }
 
   err = auth.CompareHashAndPassword(user.PasswordDigest, password)
   if err != nil {
-    http.Error(res, err.Error(), http.StatusUnauthorized)
+    http.Error(res, "{\"msg\": \"invalid username/password\"}", http.StatusUnauthorized)
     return
   }
 
@@ -149,7 +143,6 @@ func login(res http.ResponseWriter, req *http.Request) {
   fmt.Fprintln(res, jsonStr)
 }
 
-// API
 func logout(res http.ResponseWriter, req *http.Request) {
   res.Header().Set("Content-Type", "application/json") 
   auth.InvalidateAuthCookie(res)
