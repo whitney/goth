@@ -1,1 +1,1 @@
-web: auth
+web: goth
